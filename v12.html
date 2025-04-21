@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Shuttle Bus Schedule</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f4f4f4;
+      margin: 0;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    [data-theme="dark"] {
+      background: #1e1e1e;
+      color: #f9f9f9;
+    }
+
+    h1 {
+      margin-bottom: 0.3rem;
+      font-size: 1.8rem;
+    }
+
+    #clock {
+      font-size: 1rem;
+      margin-bottom: 1rem;
+      color: #666;
+    }
+
+    [data-theme="dark"] #clock {
+      color: #ccc;
+    }
+
+    .toggle {
+      margin: 1rem 0;
+    }
+
+    .toggle button {
+      margin: 0 0.25rem;
+      padding: 0.5rem 1rem;
+      border: none;
+      background: #ddd;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+    }
+
+    .toggle button.active {
+      background: #333;
+      color: white;
+    }
+
+    .routes {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.25rem;
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .card {
+      background: white;
+      padding: 1.25rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      text-align: center;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    [data-theme="dark"] .card {
+      background: #2c2c2c;
+      color: #f9f9f9;
+    }
+
+    .card h2 {
+      margin: 0 0 1rem;
+      font-size: 1.4rem;
+    }
+
+    .station {
+      font-weight: 600;
+      font-size: 1rem;
+      margin-top: 1rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .card p {
+      margin: 0.2rem 0;
+      font-size: 1.1rem;
+    }
+
+    .time {
+      font-weight: bold;
+      font-size: 1.2rem;
+    }
+
+    .dark-toggle {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: #444;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+    }
+
+    .dark-toggle:hover {
+      background: #333;
+    }
+  </style>
+</head>
+<body data-theme="light">
+  <button class="dark-toggle" id="darkModeToggle">Toggle Dark Mode</button>
+  <h1>Shuttle Bus Schedule</h1>
+  <div id="clock">--:--</div>
+
+  <div class="toggle">
+    <button data-day="weekday" class="active">Weekday</button>
+    <button data-day="holiday">Holiday</button>
+  </div>
+
+  <div class="routes" id="scheduleContainer"></div>
+
+  <script>
+    const scheduleData = {
+      "weekday": {
+        "A": {
+          "start": [
+            { time: "09:00", offset: 5 },
+            { time: "10:00", offset: -2 },
+            { time: "23:00", offset: 0 }
+          ],
+          "end": [
+            { time: "09:30", offset: 3 },
+            { time: "10:30", offset: 0 },
+            { time: "23:30", offset: 0 }
+          ]
+        },
+        "B": {
+          "start": [
+            { time: "08:00", offset: 2 },
+            { time: "09:00", offset: -1 },
+            { time: "10:00", offset: 0 }
+          ],
+          "end": [
+            { time: "08:30", offset: 0 },
+            { time: "09:30", offset: 1 },
+            { time: "10:30", offset: -3 }
+          ]
+        },
+        "C": {
+          "start": [
+            { time: "07:00", offset: 1 },
+            { time: "08:00", offset: 0 },
+            { time: "09:00", offset: -2 }
+          ],
+          "end": [
+            { time: "07:30", offset: -1 },
+            { time: "08:30", offset: 2 },
+            { time: "09:30", offset: 0 }
+          ]
+        }
+      },
+      "holiday": {
+        "A": { start: [], end: [] },
+        "B": { start: [], end: [] },
+        "C": { start: [], end: [] }
+      }
+    };
+
+    function applyOffset(timeStr, offset) {
+      const [h, m] = timeStr.split(":").map(Number);
+      const totalMinutes = h * 60 + m + offset;
+      const normalized = (totalMinutes + 1440) % 1440;
+      const newH = Math.floor(normalized / 60);
+      const newM = normalized % 60;
+      return `${newH.toString().padStart(2, '0')}:${newM.toString().padStart(2, '0')}`;
+    }
+
+    function getTimeDiff(now, timeStr) {
+      const [h, m] = timeStr.split(":").map(Number);
+      const target = new Date(now);
+      target.setHours(h, m, 0, 0);
+      return (target - now) / 1000;
+    }
+
+    function formatSeconds(sec) {
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
+    function findNextToday(times, now) {
+      const todayEnd = new Date(now);
+      todayEnd.setHours(23, 59, 59, 999);
+
+      const candidates = times.map(t => {
+        const adjusted = applyOffset(t.time, t.offset);
+        const diff = getTimeDiff(now, adjusted);
+        const adjustedDate = new Date(now);
+        const [h, m] = adjusted.split(":").map(Number);
+        adjustedDate.setHours(h, m, 0, 0);
+        return { scheduled: t.time, adjusted, diff, date: adjustedDate };
+      }).filter(t => t.diff > 0 && t.date <= todayEnd);
+
+      if (candidates.length === 0) return null;
+
+      candidates.sort((a, b) => a.diff - b.diff);
+      return candidates[0];
+    }
+
+    function render() {
+      const now = new Date();
+      document.getElementById('clock').textContent = now.toLocaleString();
+
+      const data = scheduleData[currentDay];
+      const container = document.getElementById("scheduleContainer");
+      container.innerHTML = '';
+
+      Object.keys(data).forEach(route => {
+        const card = document.createElement("div");
+        card.className = "card";
+
+        const routeData = data[route];
+        const nextStart = findNextToday(routeData.start, now);
+        const nextEnd = findNextToday(routeData.end, now);
+
+        const startText = nextStart
+          ? `<span class="time">${nextStart.scheduled}</span> ⏳ in ${formatSeconds(nextStart.diff)}`
+          : '<span class="time">❌ No more buses today</span>';
+
+        const endText = nextEnd
+          ? `<span class="time">${nextEnd.scheduled}</span> ⏳ in ${formatSeconds(nextEnd.diff)}`
+          : '<span class="time">❌ No more buses today</span>';
+
+        card.innerHTML = `
+          <h2>Route ${route}</h2>
+          <div class="station">From Residential Area</div>
+          <p>${startText}</p>
+          <div class="station">From Town</div>
+          <p>${endText}</p>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    let currentDay = 'weekday';
+
+    document.querySelectorAll('.toggle button').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.toggle button').forEach(b => b.classList.remove('active'));
+        button.classList.add('active');
+        currentDay = button.dataset.day;
+        render();
+      });
+    });
+
+    document.getElementById('darkModeToggle').addEventListener('click', () => {
+      const body = document.body;
+      body.setAttribute('data-theme', body.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+    });
+
+    render();
+    setInterval(render, 1000);
+  </script>
+</body>
+</html>
